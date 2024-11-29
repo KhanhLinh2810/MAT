@@ -12,14 +12,18 @@ import re
 import copy
 import numpy as np
 import torch
-import dnnlib
+import dnnlib as dnnlib
 from torch_utils import misc
+import torch_utils as torch_utils
 
 #----------------------------------------------------------------------------
 
-def load_network_pkl(f, force_fp16=False):
-    data = _LegacyUnpickler(f).load()
+def load_network_pkl(f, device = 'cpu', force_fp16=False):
+    
+    print('----------------------')
+    data = torch.load(f, map_location=device)
 
+    print('----------------------')
     # Legacy TensorFlow pickle => convert.
     if isinstance(data, tuple) and len(data) == 3 and all(isinstance(net, _TFNetworkStub) for net in data):
         tf_G, tf_D, tf_Gs = data
@@ -28,12 +32,14 @@ def load_network_pkl(f, force_fp16=False):
         G_ema = convert_tf_generator(tf_Gs)
         data = dict(G=G, D=D, G_ema=G_ema)
 
+    print('----------------------')
     # Add missing fields.
     if 'training_set_kwargs' not in data:
         data['training_set_kwargs'] = None
     if 'augment_pipe' not in data:
         data['augment_pipe'] = None
 
+    print('----------------------')
     # Validate contents.
     assert isinstance(data['G'], torch.nn.Module)
     assert isinstance(data['D'], torch.nn.Module)
@@ -57,6 +63,9 @@ def load_network_pkl(f, force_fp16=False):
                 new = type(old)(**kwargs).eval().requires_grad_(False)
                 misc.copy_params_and_buffers(old, new, require_all=True)
                 data[key] = new
+    for key in ['G', 'D', 'G_ema']:
+        data[key] = data[key].to(device)
+        
     return data
 
 #----------------------------------------------------------------------------
@@ -66,6 +75,8 @@ class _TFNetworkStub(dnnlib.EasyDict):
 
 class _LegacyUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
+        
+        print('----------------------', module, name)
         if module == 'dnnlib.tflib.network' and name == 'Network':
             return _TFNetworkStub
         return super().find_class(module, name)
